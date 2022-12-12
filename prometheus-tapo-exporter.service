@@ -1,0 +1,16 @@
+[Unit]
+Description=Prometheus exporter for Tapo devices
+Documentation=https://github.com/paulcager/prometheus-tapo-exporter 
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=always
+User=prometheus
+EnvironmentFile=/etc/default/tapo-exporter
+ExecStart=/usr/local/bin/prometheus-tapo-exporter $ARGS
+TimeoutStopSec=20s
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target
