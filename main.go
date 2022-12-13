@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -139,11 +140,13 @@ func (d *Device) refresh() {
 	d.Lock()
 	defer d.Unlock()
 
+	start := time.Now()
+
 	info, err := d.session.GetDeviceInfo()
 	if err != nil {
-		level.Warn(logger).Log("device", d.address, "err", err)
+		level.Warn(logger).Log("device", d.address, "err", err, "time", time.Since(start).Seconds())
 	} else {
-		level.Debug(logger).Log("device", d.address, "on", info.Result.DeviceOn)
+		level.Debug(logger).Log("device", d.address, "on", info.DeviceOn, "time", time.Since(start).Seconds())
 	}
 
 	d.lastWasValid = err == nil
@@ -162,7 +165,7 @@ func (d *Device) refresh() {
 		d.onTime = stdGauge("onTime", "Cumulative on time", info) // Cannot be a counter because Tapo may reset.
 		d.overheated = stdGauge("overheated", "Is the plug overheated", info)
 
-		d.supportsPower = strings.EqualFold("P110", info.Result.Model)
+		d.supportsPower = strings.EqualFold("P110", info.Model)
 		if d.supportsPower {
 			d.currentPower = stdGauge("power", "power (watts)", info)
 			d.todayRuntime = stdGauge("today_runtime", "Runtime today (mins)", info)
@@ -170,16 +173,16 @@ func (d *Device) refresh() {
 		}
 	}
 
-	d.on.Set(b2f(info.Result.DeviceOn))
-	d.onTime.Set(info.Result.OnTime)
-	d.overheated.Set(b2f(info.Result.Overheated))
+	d.on.Set(b2f(info.DeviceOn))
+	d.onTime.Set(info.OnTime)
+	d.overheated.Set(b2f(info.Overheated))
 
 	if d.supportsPower {
 		energy, err := d.session.GetEnergyUsage()
 		if err == nil {
-			d.todayRuntime.Set(float64(energy.Result.TodayRuntimeMins))
-			d.todayWattHours.Set(float64(energy.Result.TodayEnergyWattHours))
-			d.currentPower.Set(float64(energy.Result.CurrentPowerMilliWatts) / 1000.0)
+			d.todayRuntime.Set(float64(energy.TodayRuntimeMins))
+			d.todayWattHours.Set(float64(energy.TodayEnergyWattHours))
+			d.currentPower.Set(float64(energy.CurrentPowerMilliWatts) / 1000.0)
 		}
 	}
 }
@@ -232,20 +235,22 @@ func b2f(b bool) float64 {
 }
 
 func stdGauge(name string, help string, info *tapo.DeviceInfo) prometheus.Gauge {
-	devType := strings.ToLower(info.Result.Avatar)
+	devType := strings.ToLower(info.Avatar)
 	if devType == "" {
-		devType = info.Result.Model
+		devType = info.Model
 	}
+	nick := info.Nickname
 	return prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      name,
 		Help:      help,
 		ConstLabels: prometheus.Labels{
-			"model": info.Result.Model,
-			"ip":    info.Result.IP,
-			"mac":   info.Result.Mac,
+			"model": info.Model,
+			"ip":    info.IP,
+			"mac":   info.Mac,
 			"type":  devType,
+			"name":  nick,
 		},
 	})
 }
@@ -285,6 +290,8 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
+	start := time.Now()
+
 	wg := new(sync.WaitGroup)
 	wg.Add(len(e.devices))
 	for _, dev := range e.devices {
@@ -295,4 +302,6 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		}(dev)
 	}
 	wg.Wait()
+
+	level.Debug(logger).Log("op", "collect", "time", time.Since(start))
 }
