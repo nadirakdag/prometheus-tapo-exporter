@@ -15,10 +15,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /prometheus-tapo-exporter
 # Deploy the application binary into a lean image
 FROM alpine:latest AS build-release-stage
 
-ENV USERNAME=
-ENV PASSWORD=
-ENV DEVICES=
-
 WORKDIR /
 
 COPY --from=build-stage /prometheus-tapo-exporter /prometheus-tapo-exporter
@@ -26,4 +22,3 @@ COPY --from=build-stage /prometheus-tapo-exporter /prometheus-tapo-exporter
 EXPOSE 8080
 
 ENTRYPOINT ["/prometheus-tapo-exporter"]
-CMD ["--web.listen-address",":8080","--tapo.username", "$USERNAME", "--tapo.password", "$PASSWORD", "$DEVICES"]

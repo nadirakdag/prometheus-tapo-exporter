@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/go-kit/log v0.2.1
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/kr/pretty v0.3.1
 	github.com/paulcager/tapo-lib v1.0.3
 	github.com/prometheus/client_golang v1.13.0

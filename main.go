@@ -1,24 +1,21 @@
 package main
 
 import (
+	"github.com/go-kit/log/level"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	log "github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/kr/pretty"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
-	"github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	stdlog "log"
+	stdLog "log"
 
-	tapo "github.com/paulcager/tapo-lib"
+	"github.com/kelseyhightower/envconfig"
+	"github.com/paulcager/tapo-lib"
 )
 
 const (
@@ -27,37 +24,33 @@ const (
 )
 
 var (
-	listenAddress          = kingpin.Flag("web.listen-address", "Address on which to expose metrics.").Default(":9782").String()
-	metricsEndpoint        = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
-	tapoUsername           = kingpin.Flag("tapo.username", "Tapo username.").Required().String()
-	tapoPassword           = kingpin.Flag("tapo.password", "Tapo password.").Required().String()
-	clientTimeout          = kingpin.Flag("http.timeout", "Timeout for HTTP call out into each device").Default("10s").Duration()
-	disableExporterMetrics = kingpin.Flag(
-		"web.disable-exporter-metrics",
-		"Exclude metrics about the exporter itself (promhttp_*, process_*, go_*).",
-	).Bool()
-	tapoDevices = kingpin.Arg("devices", "Devices to query").Required().Strings()
-
+	cfg    Config
 	logger log.Logger
-
-	_ = pretty.Print
 )
 
-func main() {
-	kingpin.Version(version.Print("tapo_exporter"))
-	promlogConfig := &promlog.Config{}
-	flag.AddFlags(kingpin.CommandLine, promlogConfig)
-	kingpin.HelpFlag.Short('h')
-	kingpin.CommandLine.UsageWriter(os.Stdout)
-	kingpin.Parse()
+type Config struct {
+	ServerPort             string   `required:"true" split_words:"true" default:":9782"`
+	Username               string   `split_words:"true" required:"true"`
+	Password               string   `split_words:"true" required:"true"`
+	DisableExporterMetrics bool     `split_words:"true" required:"true" default:"true"`
+	Devices                []string `split_words:"true" required:"true"`
+}
 
-	logger = promlog.New(promlogConfig)
+func main() {
+	err := envconfig.Process("", &cfg)
+	if err != nil {
+		stdLog.Panic(err)
+	}
+
+	promLogConfig := &promlog.Config{}
+	logger = promlog.New(promLogConfig)
+
 	level.Info(logger).Log("msg", "Starting tapo_exporter", "version", version.Info())
 	level.Info(logger).Log("msg", "Build context", "build_context", version.BuildContext())
 
 	var registry = prometheus.DefaultRegisterer
 	var gatherer = prometheus.DefaultGatherer
-	if *disableExporterMetrics {
+	if cfg.DisableExporterMetrics {
 		reg := prometheus.NewRegistry()
 		registry = reg
 		gatherer = reg
@@ -71,20 +64,20 @@ func main() {
 	registry.MustRegister(exporter)
 	registry.MustRegister(version.NewCollector("tapo_exporter"))
 
-	http.Handle(*metricsEndpoint, promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}))
+	http.Handle("/metrics", promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`
 <html>
 			<head><title>Tapo Exporter</title></head>
 			<body>
 			<h1>Tapo Exporter</h1>
-			<p><a href="` + *metricsEndpoint + `">Metrics</a></p>
+			<p><a href="/metrics">Metrics</a></p>
 			</body>
 </html>
 `))
 	})
 
-	stdlog.Fatal(http.ListenAndServe(*listenAddress, nil))
+	stdLog.Fatal(http.ListenAndServe(cfg.ServerPort, nil))
 }
 
 type Device struct {
@@ -111,11 +104,11 @@ type Device struct {
 func NewDevice(address string) (*Device, error) {
 	dev := &Device{address: address}
 
-	sess, err := tapo.NewSession(address, *tapoUsername, *tapoPassword)
+	sess, err := tapo.NewSession(address, cfg.Username, cfg.Password)
 	if err != nil {
 		return nil, err
 	}
-	sess.Client = &http.Client{Timeout: *clientTimeout}
+	sess.Client = &http.Client{Timeout: time.Second * 10}
 
 	dev.session = sess
 	dev.up = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -263,7 +256,7 @@ type Exporter struct {
 func NewExporter() (*Exporter, error) {
 
 	devices := make(map[string]*Device)
-	for _, devAddress := range *tapoDevices {
+	for _, devAddress := range cfg.Devices {
 		dev, err := NewDevice(devAddress)
 		if err != nil {
 			// Should never happen in practice, even if device is offline.
