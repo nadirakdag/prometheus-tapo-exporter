@@ -1,18 +1,20 @@
 package main
 
 import (
-	"github.com/go-kit/log/level"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-kit/log/level"
+
+	stdLog "log"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/version"
-	stdLog "log"
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/paulcager/tapo-lib"
@@ -158,7 +160,7 @@ func (d *Device) refresh() {
 		d.onTime = stdGauge("onTime", "Cumulative on time", info) // Cannot be a counter because Tapo may reset.
 		d.overheated = stdGauge("overheated", "Is the plug overheated", info)
 
-		d.supportsPower = strings.EqualFold("P110", info.Model)
+		d.supportsPower = strings.EqualFold("P115", info.Model)
 		if d.supportsPower {
 			d.currentPower = stdGauge("power", "power (watts)", info)
 			d.todayRuntime = stdGauge("today_runtime", "Runtime today (mins)", info)
